@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/awesome-gocui/gocui"
@@ -19,7 +20,6 @@ type Task struct {
 var tasks []Task
 
 const (
-	tasksFile   = "tasks.json"
 	colorReset  = "\033[0m"
 	colorGreen  = "\033[32m"
 	colorRed    = "\033[31m"
@@ -28,7 +28,20 @@ const (
 
 var selectedTaskIndex int // Tracks the currently selected task
 
+func getTasksFilePath() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(homeDir, "sisyphus", "tasks.json"), nil
+}
+
 func loadTasks() error {
+	tasksFile, err := getTasksFilePath()
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %w", err)
+	}
+
 	file, err := os.Open(tasksFile)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -55,6 +68,17 @@ func loadTasks() error {
 }
 
 func saveTasks() error {
+	tasksFile, err := getTasksFilePath()
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	// Ensure the directory exists before creating the file
+	dir := filepath.Dir(tasksFile)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
 	file, err := os.Create(tasksFile)
 	if err != nil {
 		return err
@@ -104,7 +128,15 @@ func main() {
 		log.Panicln(err)
 	}
 
+	// Show Help Menu
+	if err := g.SetKeybinding("", 'h', gocui.ModNone, showHelp); err != nil {
+		log.Panicln(err)
+	}
+
 	if err := g.MainLoop(); err != nil && !errors.Is(err, gocui.ErrQuit) {
+		log.Panicln(err)
+	}
+	if err := g.SetKeybinding("list", 'd', gocui.ModNone, confirmDeleteTask); err != nil {
 		log.Panicln(err)
 	}
 }
@@ -118,6 +150,7 @@ func layout(g *gocui.Gui) error {
 			return err
 		}
 		v.Title = "Tasks"
+
 		if _, err := g.SetCurrentView("list"); err != nil {
 			return err
 		}
@@ -136,6 +169,8 @@ func refreshTaskList(g *gocui.Gui) error {
 		return err
 	}
 	v.Clear()
+	v.Wrap = true
+	v.Autoscroll = true
 
 	if len(tasks) == 0 {
 		fmt.Fprintln(v, "Press 'a' to add a new task")
@@ -189,9 +224,58 @@ func updateStatusBar(g *gocui.Gui) error {
 		percentageCompleted = (completedTasks * 100) / totalTasks
 	}
 
-	fmt.Fprintf(v, "To-Do List | %s%d%% Completed%s (%d/%d)",
+	fmt.Fprintf(v, "Sisyphus | %s%d%% Completed%s (%d/%d) | Help [h]",
 		colorGreen, percentageCompleted, colorReset, completedTasks, totalTasks)
 
+	return nil
+}
+
+func showHelp(g *gocui.Gui, v *gocui.View) error {
+	maxX, maxY := g.Size()
+	if helpView, err := g.SetView("help", maxX/4, maxY/4-5, 3*maxX/4, maxY/4+5, 0); err != nil {
+		if !errors.Is(err, gocui.ErrUnknownView) {
+			return err
+		}
+		helpView.Title = "Help - Keybindings"
+		helpView.Autoscroll = true
+		helpView.Wrap = true
+
+		// Set the background color to gray (ANSI code 48;5;235)
+		helpView.BgColor = gocui.ColorBlack // This is required for 'gocui' compatibility
+		helpView.FgColor = gocui.ColorWhite // Set foreground text color to white for contrast
+
+		// Custom gray background using ANSI code
+		helpView.Highlight = false // Disable text highlighting
+
+		helpText := `Keybindings:
+- Arrow Up: Move up the task list
+- Arrow Down: Move down the task list
+- Space: Toggle task completion
+- 'a': Add a new task
+- 'd': Delete selected task
+- 'q' or Ctrl+C: Quit
+- 'h': Show this help menu
+- Ctrl+D: Clear all tasks`
+
+		// Display the help text
+		fmt.Fprintln(helpView, helpText)
+
+		// Keybinding to close the help menu
+		if err := g.SetKeybinding("help", 'q', gocui.ModNone, closeHelp); err != nil {
+			return err
+		}
+
+		// Set the current view to the help view
+		if _, err := g.SetCurrentView("help"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func closeHelp(g *gocui.Gui, v *gocui.View) error {
+	g.DeleteView("help")
+	g.SetCurrentView("list")
 	return nil
 }
 
@@ -307,4 +391,34 @@ func quit(g *gocui.Gui, v *gocui.View) error {
 
 func strikeThrough(text string) string {
 	return colorStrike + text + colorReset
+}
+
+func confirmDeleteTask(g *gocui.Gui, v *gocui.View) error {
+	maxX, maxY := g.Size()
+	if dialogView, err := g.SetView("confirmDelete", maxX/4, maxY/2-1, 3*maxX/4, maxY/2+1, 0); err != nil {
+		if !errors.Is(err, gocui.ErrUnknownView) {
+			return err
+		}
+		dialogView.Title = "Confirm Deletion"
+		fmt.Fprintf(dialogView, "Delete task '%s'? (y/n)", tasks[selectedTaskIndex].Name)
+
+		g.SetKeybinding("confirmDelete", 'y', gocui.ModNone, deleteTask)
+		g.SetKeybinding("confirmDelete", 'n', gocui.ModNone, cancelDeleteTask)
+		g.SetCurrentView("confirmDelete")
+	}
+	return nil
+}
+
+func deleteTask(g *gocui.Gui, v *gocui.View) error {
+	tasks = append(tasks[:selectedTaskIndex], tasks[selectedTaskIndex+1:]...)
+	selectedTaskIndex = 0
+	g.DeleteView("confirmDelete")
+	g.SetCurrentView("list")
+	return refreshTaskList(g)
+}
+
+func cancelDeleteTask(g *gocui.Gui, v *gocui.View) error {
+	g.DeleteView("confirmDelete")
+	g.SetCurrentView("list")
+	return nil
 }
