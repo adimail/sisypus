@@ -1,10 +1,10 @@
 # Sisyphus
 
-Sisyphus is a terminal-based task manager with a simple, interactive interface for managing daily, weekly, monthly, and annual goals. It helps you stay organized and track your progress without distractions.
+Sisyphus is a minimal terminal-based to do list app.
 
-## Libraries Used
+## Dependencies
 
-- [gocui](https://github.com/awesome-gocui/gocui): A minimalist Go library for building terminal-based user interfaces.
+- [gocui](https://github.com/awesome-gocui/gocui): Go library for building terminal-based user interfaces.
 
 ## Screenshots
 
