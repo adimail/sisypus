@@ -46,25 +46,29 @@ func loadTasks() error {
 	if err != nil {
 		if os.IsNotExist(err) {
 			// Create an empty tasks.json if it doesn't exist
-			if err := saveTasks(); err != nil {
-				return fmt.Errorf("failed to create tasks file: %w", err)
+			if saveErr := saveTasks(); saveErr != nil {
+				return fmt.Errorf("failed to create tasks file: %w", saveErr)
 			}
 			return nil
 		}
-		return err
+		return fmt.Errorf("failed to open tasks file: %w", err)
 	}
 	defer file.Close()
 
-	fileInfo, err := file.Stat()
-	if err != nil {
-		return fmt.Errorf("failed to get file info: %w", err)
+	fileInfo, statErr := file.Stat()
+	if statErr != nil {
+		return fmt.Errorf("failed to get file info: %w", statErr)
 	}
 	if fileInfo.Size() == 0 {
 		tasks = []Task{}
 		return nil
 	}
 
-	return json.NewDecoder(file).Decode(&tasks)
+	if decodeErr := json.NewDecoder(file).Decode(&tasks); decodeErr != nil {
+		return fmt.Errorf("failed to decode tasks file: %w", decodeErr)
+	}
+
+	return nil
 }
 
 func saveTasks() error {
