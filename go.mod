@@ -2,8 +2,9 @@ module github.com/adimail/sisyphus
 
 go 1.22.3
 
+require github.com/awesome-gocui/gocui v1.1.0 // direct
+
 require (
-	github.com/awesome-gocui/gocui v1.1.0 // direct
 	github.com/gdamore/encoding v1.0.0 // indirect
 	github.com/gdamore/tcell/v2 v2.4.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.0.3 // indirect
